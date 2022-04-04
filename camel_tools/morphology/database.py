@@ -375,7 +375,7 @@ class MorphologyDB:
                 stem = parts[0]
                 category = parts[1]
                 analysis = self._parse_analysis_line_toks(parts[2].split(u' '))
-                analysis['lex'] = strip_lex(analysis['lex'])
+                # analysis['lex'] = strip_lex(analysis['lex'])
 
                 if self._withAnalysis:
                     if stem not in self.stem_hash:
