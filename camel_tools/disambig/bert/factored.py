@@ -291,11 +291,11 @@ class BERTFactoredDisambiguator(Disambiguator):
 
     def _disambiguate_word(self, word, pred):
         key = (word, tuple(pred[feat] for feat in self.features))
-        if key in self.ranking_cache:
-            scored_analyses = self.ranking_cache[key]
+        if key in self._ranking_cache:
+            scored_analyses = self._ranking_cache[key]
         else:
             scored_analyses = self._scored_analyses(word, pred)
-            self.ranking_cache[key] = scored_analyses
+            self._ranking_cache[key] = scored_analyses
 
         return DisambiguatedWord(word, scored_analyses)
 
