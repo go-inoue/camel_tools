@@ -24,7 +24,9 @@
 
 
 from camel_tools.disambig.bert.unfactored import BERTUnfactoredDisambiguator
+from camel_tools.disambig.bert.factored import BERTFactoredDisambiguator
 
 __all__ = [
     'BERTUnfactoredDisambiguator',
+    'BERTFactoredDisambiguator'
 ]
