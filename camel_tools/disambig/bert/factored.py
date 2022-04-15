@@ -327,7 +327,7 @@ class BERTFactoredDisambiguator(Disambiguator):
             list of disambiguations for each word in the given sentence.
         """
 
-        predictions = self.predict_sentence(sentence)
+        predictions = self._predict_sentence(sentence)
 
         return [self._disambiguate_word(w, p)
                 for (w, p) in zip(sentence, predictions)]
@@ -343,7 +343,7 @@ class BERTFactoredDisambiguator(Disambiguator):
             :obj:`list` of :obj:`list` of :obj:`~camel_tools.disambig.common.DisambiguatedWord`: The
             list of disambiguations for each word in the given sentence.
         """
-        predictions = self.predict_sentences(sentences)
+        predictions = self._predict_sentences(sentences)
         disambiguated_sentences = []
         for sentence, prediction in zip(sentences, predictions):
             disambiguated_sentence = [
