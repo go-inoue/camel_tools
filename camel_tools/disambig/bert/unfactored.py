@@ -565,14 +565,16 @@ class BERTUnfactoredDisambiguator(Disambiguator):
                   for a in analyses]
         scored.sort(key=lambda s: (-s[0], s[1]['diac']))
 
-        max_score = max(s[0] for s in scored)
+        scored_analyses = [ScoredAnalysis(s[0], s[1]) for s in scored]
 
-        if max_score != 0:
-            scored_analyses = [ScoredAnalysis(s[0] / max_score, s[1])
-                               for s in scored]
-        else:
-            # If the max score is 0, do not divide
-            scored_analyses = [ScoredAnalysis(0, s[1]) for s in scored]
+        # max_score = max(s[0] for s in scored)
+
+        # if max_score != 0:
+        #     scored_analyses = [ScoredAnalysis(s[0] / max_score, s[1])
+        #                        for s in scored]
+        # else:
+        #     # If the max score is 0, do not divide
+        #     scored_analyses = [ScoredAnalysis(0, s[1]) for s in scored]
 
         return scored_analyses[:self._top]
 
