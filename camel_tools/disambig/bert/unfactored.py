@@ -170,6 +170,103 @@ class _BERTFeatureTagger:
 
         return [i[1] for i in sorted_predictions]
 
+
+    def _align_predictions_score(self, predictions, label_ids, sent_ids):
+        """Aligns the predictions of the model with the inputs and it takes
+        care of getting rid of the padding token.
+
+        Args:
+            predictions (:obj:`np.ndarray`): The predictions of the model
+            label_ids (:obj:`np.ndarray`): The label ids of the inputs.
+                They will always be the ids of Os since we're dealing with a
+                test dataset. Note that label_ids are also padded.
+            sent_ids (:obj:`np.ndarray`): The sent ids of the inputs.
+
+        Returns:
+            :obj:`list` of :obj:`list` of :obj:`str`: The predicted labels for
+            all the sentences in the batch
+        """
+
+        #preds = np.argmax(predictions, axis=2)
+        preds = np.max(nn.Softmax(dim=2)(torch.Tensor(predictions)).numpy(), axis=2)
+
+        batch_size, seq_len = preds.shape
+        preds_list = [[] for _ in range(batch_size)]
+
+        for i in range(batch_size):
+            for j in range(seq_len):
+                if label_ids[i, j] != nn.CrossEntropyLoss().ignore_index:
+                    preds_list[i].append(preds[i][j])
+
+        # Collating the predicted labels based on the sentence ids
+        final_preds_list = [[] for _ in range(len(set(sent_ids)))]
+        for i, id in enumerate(sent_ids):
+            id = id - sent_ids[0]
+            final_preds_list[id].extend(preds_list[i])
+
+        return final_preds_list
+
+    # Addition for getting the score
+    def predict_score(self, sentences, batch_size=32, max_seq_length=512):
+        """Predict the morphosyntactic labels of a list of sentences.
+
+        Args:
+            sentences (:obj:`list` of :obj:`list` of :obj:`str`): The input
+                sentences.
+            batch_size (:obj:`int`): The batch size.
+            max_seq_length (:obj:`int`): The max sequence size.
+
+        Returns:
+            :obj:`list` of :obj:`list` of :obj:`str`: The predicted
+            morphosyntactic labels for the given sentences.
+        """
+
+        if len(sentences) == 0:
+            return []
+
+        sorted_sentences = list(enumerate(sentences))
+        sorted_sentences = sorted(sorted_sentences, key=lambda x: len(x[1]))
+        sorted_sentences_idx = [i[0] for i in sorted_sentences]
+        sorted_sentences_text = [i[1] for i in sorted_sentences]
+
+        test_dataset = MorphDataset(sentences=sorted_sentences_text,
+                                    tokenizer=self._tokenizer,
+                                    labels=list(self._labels_map.values()),
+                                    max_seq_length=max_seq_length)
+
+        data_loader = DataLoader(test_dataset, batch_size=batch_size,
+                                 shuffle=False, drop_last=False,
+                                 collate_fn=self._collate_fn)
+
+        predictions = []
+        device = ('cuda' if self._use_gpu and torch.cuda.is_available()
+                  else 'cpu')
+        self._model.to(device)
+        self._model.eval()
+
+        with torch.no_grad():
+            for batch in data_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                inputs = {'input_ids': batch['input_ids'],
+                          'token_type_ids': batch['token_type_ids'],
+                          'attention_mask': batch['attention_mask']}
+
+                label_ids = batch['label_ids']
+                sent_ids = batch['sent_id']
+                logits = self._model(**inputs)[0]
+                preds = logits
+                prediction = self._align_predictions_score(preds.cpu().numpy(),
+                                                     label_ids.cpu().numpy(),
+                                                     sent_ids.cpu().numpy())
+                predictions.extend(prediction)
+
+        sorted_predictions_pair = zip(sorted_sentences_idx, predictions)
+        sorted_predictions = sorted(sorted_predictions_pair,
+                                    key=lambda x: x[0])
+
+        return [i[1] for i in sorted_predictions]
+
+
     def _collate_fn(self, batch):
         input_ids = []
         token_type_ids = []
@@ -435,8 +532,9 @@ class BERTUnfactoredDisambiguator(Disambiguator):
         parsed_predictions = []
         model = self._model['unfactored']
         preds =  model.predict([sentence], self._batch_size)[0]
+        preds_score =  model.predict_score([sentence], self._batch_size)[0]
 
-        for word, pred in zip(sentence, preds):
+        for word, pred, score in zip(sentence, preds, preds_score):
             d = {}
             for feat in pred.split('__'):
                 f, v = feat.split(':')
@@ -445,6 +543,7 @@ class BERTUnfactoredDisambiguator(Disambiguator):
             d['lex'] = word  # Copy the word when analyzer is not used
             d['diac'] = word  # Copy the word when analyzer is not used
 
+            d['softmax_score'] = score
             parsed_predictions.append(d)
 
         return parsed_predictions
