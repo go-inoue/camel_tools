@@ -87,8 +87,9 @@ class _BERTFeatureTagger:
         Returns:
             :obj:`list` of :obj:`str`: List of Morph labels.
         """
-
-        return list(self._labels_map.values())
+        num_labels = len(self._labels_map)
+        labels = [self._labels_map[i] for i in range(num_labels)]
+        return labels
 
     def _align_predictions(self, predictions, label_ids, sent_ids):
         """Aligns the predictions of the model with the inputs and it takes
@@ -140,21 +141,26 @@ class _BERTFeatureTagger:
         if len(sentences) == 0:
             return []
 
+        # Sort sentences by length to minimize padding
         sorted_sentences = list(enumerate(sentences))
         sorted_sentences = sorted(sorted_sentences, key=lambda x: len(x[1]))
+
+        # Keep track of the original indices to unsort at the end
         sorted_sentences_idx = [i[0] for i in sorted_sentences]
         sorted_sentences_text = [i[1] for i in sorted_sentences]
 
         test_dataset = MorphDataset(sentences=sorted_sentences_text,
                                     tokenizer=self._tokenizer,
-                                    labels=list(self._labels_map.values()),
+                                    labels=self.labels(),
                                     max_seq_length=max_seq_length)
 
         data_loader = DataLoader(test_dataset, batch_size=batch_size,
-                                 shuffle=False, drop_last=False,
-                                 collate_fn=self._collate_fn)
+                                 shuffle=False, drop_last=False)
 
-        predictions = []
+        label_ids = None
+        preds = None
+        sent_ids = None
+
         device = ('cuda' if self._use_gpu and torch.cuda.is_available()
                   else 'cpu')
         self._model.to(device)
@@ -167,54 +173,27 @@ class _BERTFeatureTagger:
                           'token_type_ids': batch['token_type_ids'],
                           'attention_mask': batch['attention_mask']}
 
-                label_ids = batch['label_ids']
-                sent_ids = batch['sent_id']
-                logits = self._model(**inputs)[0]
-                preds = logits
-                prediction = self._align_predictions(preds.cpu().numpy(),
-                                                     label_ids.cpu().numpy(),
-                                                     sent_ids.cpu().numpy())
-                predictions.extend(prediction)
+                label_ids = (batch['label_ids'] if label_ids is None
+                             else torch.cat((label_ids, batch['label_ids'])))
+                sent_ids = (batch['sent_id'] if sent_ids is None
+                            else torch.cat((sent_ids, batch['sent_id'])))
 
+                logits = self._model(**inputs)[0]
+
+                preds = logits if preds is None else torch.cat((preds, logits),
+                                                               dim=0)
+        # Align the predictions with the input tokens
+        predictions = self._align_predictions(preds.cpu().numpy(),
+                                              label_ids.cpu().numpy(),
+                                              sent_ids.cpu().numpy())
+
+        # Unsort the predictions to restore the original order of sentences
         sorted_predictions_pair = zip(sorted_sentences_idx, predictions)
         sorted_predictions = sorted(sorted_predictions_pair,
                                     key=lambda x: x[0])
+        predictions = [i[1] for i in sorted_predictions]
 
-        return [i[1] for i in sorted_predictions]
-
-    def _collate_fn(self, batch):
-        input_ids = []
-        token_type_ids = []
-        attention_mask = []
-        label_ids = []
-        sent_id = []
-
-        # Find max length within the batch
-        max_seq_length = 0
-        for sent in batch:
-            l = len(sent['input_ids'][sent['input_ids'].nonzero()].squeeze())
-            max_seq_length = max(max_seq_length, l)
-
-        # Truncate the unnecessary paddings
-        for sent in batch:
-            for _, t in sent.items():
-                if _ != 'sent_id':
-                    sent[_] = t[:max_seq_length]
-
-        for sent in batch:
-            input_ids.append(sent['input_ids'])
-            token_type_ids.append(sent['token_type_ids'])
-            attention_mask.append(sent['attention_mask'])
-            label_ids.append(sent['label_ids'])
-            sent_id.append(sent['sent_id'])
-
-        return {
-            'input_ids': torch.stack(input_ids),
-            'token_type_ids': torch.stack(token_type_ids),
-            'attention_mask': torch.stack(attention_mask),
-            'label_ids': torch.stack(label_ids),
-            'sent_id': torch.tensor(sent_id, dtype=torch.int32),
-        }
+        return predictions
 
 
 class BERTUnfactoredDisambiguator(Disambiguator):
@@ -412,7 +391,8 @@ class BERTUnfactoredDisambiguator(Disambiguator):
             morphosyntactic labels for the given sentences.
         """
 
-        preds = self._model['unfactored'].predict(sentences, self._batch_size)
+        preds = self._model['unfactored'].predict(sentences,
+                                                  batch_size=self._batch_size)
         parsed_predictions = []
 
         for sent, pred in zip(sentences, preds):
@@ -446,7 +426,7 @@ class BERTUnfactoredDisambiguator(Disambiguator):
 
         parsed_predictions = []
         model = self._model['unfactored']
-        preds =  model.predict([sentence], self._batch_size)[0]
+        preds =  model.predict([sentence], batch_size=self._batch_size)[0]
 
         for word, pred in zip(sentence, preds):
             d = {}
