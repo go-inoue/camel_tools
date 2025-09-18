@@ -143,13 +143,18 @@ class MorphDataset(Dataset):
                 word_tokens = tokenizer.tokenize(word)
                 # bert-base-multilingual-cased sometimes output "nothing ([])
                 # when calling tokenize with just a space.
-                if len(word_tokens) > 0:
-                    tokens.append(word_tokens)
-                    # Use the real label id for the first token of the word,
-                    # and padding ids for the remaining tokens
-                    label_ids.append([label_map[label]] +
-                                     [pad_token_label_id] *
-                                     (len(word_tokens) - 1))
+                if len(word_tokens) == 0:
+                    # Skip only genuine whitespace tokens
+                    if isinstance(word, str) and word.isspace():
+                        continue
+                    # Otherwise preserve alignment with an UNK
+                    word_tokens = [tokenizer.unk_token or "[UNK]"]
+
+                tokens.append(word_tokens)
+                # Use the real label id for the first token of the word,
+                # and padding ids for the remaining tokens
+                label_ids.append([label_map[label]] +
+                                 [pad_token_label_id] * (len(word_tokens) - 1))
 
             token_segments = []
             token_segment = []
