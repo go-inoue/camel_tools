@@ -117,13 +117,15 @@ class Generator(object):
         analyses = collections.deque()
 
         for stem_feats in stem_feats_list:
-
-            if 'vox' in feats and stem_feats['vox'] != feats['vox']:
-                continue
-            if 'rat' in feats and stem_feats['rat'] != feats['rat']:
-                continue
-            if 'pos' in feats and stem_feats['pos'] != feats['pos']:
-                continue
+            if 'vox' in feats and 'vox' in stem_feats:
+                if stem_feats['vox'] != feats['vox']:
+                    continue
+            if 'rat' in feats and 'rat' in stem_feats:
+                if stem_feats['rat'] != feats['rat']:
+                    continue
+            if 'pos' in feats and 'pos' in stem_feats:
+                if stem_feats['pos'] != feats['pos']:
+                    continue
 
             ignore_stem = False
             for feat in ['prc0', 'prc1', 'prc2', 'prc3', 'enc0', 'enc1', 'enc2']:
